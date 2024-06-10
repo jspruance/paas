@@ -1,0 +1,98 @@
+# The Pipeline will run through several tasks:
+# - source is pulled from git
+# - source is built into an image by buildpacks
+# - image output is pushed to registry
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: DEFAULT_NAME
+  namespace: DEFAULT_NAMESPACE
+  labels: {}
+spec:
+  params:
+    - name: image
+      type: string
+      description: image URL to push
+    - name: url
+      type: string
+      description: code repository url
+    - name: revision
+      type: string
+      description: the revision to check out
+    - name: fromDockerfile
+      type: string
+  workspaces:
+    - name: source-workspace # Directory where application source is located. (REQUIRED)
+    - name: kaniko-docker-credentials
+  tasks:
+    - name: fetch-repository # This task fetches a repository from github, using the `git-clone` task you installed
+      taskRef:
+        name: git-clone
+      workspaces:
+        - name: output
+          workspace: source-workspace
+      params:
+        - name: url
+          value: "$(params.url)"
+        - name: revision
+          value: "$(params.revision)"
+        - name: subdirectory
+          value: ""
+        - name: deleteExisting
+          value: "true"
+    - name: buildpacks # This task uses the `buildpacks` task to build the application
+      taskRef:
+        name: buildpacks
+      runAfter:
+        - fetch-repository
+      when:
+        - input: "$(params.fromDockerfile)"
+          operator: in
+          values: ["false"]
+      workspaces:
+        - name: source
+          workspace: source-workspace
+      params:
+        - name: APP_IMAGE
+          value: "$(params.image)"
+        - name: SOURCE_SUBPATH
+          value: "" # This is the path within the samples repo you want to build (OPTIONAL, default: "")
+        - name: BUILDER_IMAGE
+          value: paketobuildpacks/builder:full # This is the builder we want the task to use (REQUIRED)
+    - name: build-push # This task uses the `kaniko` task to build the application
+      taskRef:
+        name: kaniko
+      runAfter:
+        - fetch-repository
+      when:
+        - input: "$(params.fromDockerfile)"
+          operator: in
+          values: ["true"]
+      workspaces:
+        - name: source
+          workspace: source-workspace
+        - name: dockerconfig
+          workspace: kaniko-docker-credentials
+      params:
+        - name: IMAGE
+          value: "$(params.image)"
+    - name: display-results
+      runAfter:
+        - buildpacks
+      when:
+        - input: "$(params.fromDockerfile)"
+          operator: in
+          values: ["false"]
+      taskSpec:
+        steps:
+          - name: print
+            image: docker.io/library/bash:5.1.4@sha256:b208215a4655538be652b2769d82e576bc4d0a2bb132144c060efc5be8c3f5d6
+            script: |
+              #!/usr/bin/env bash
+              set -e
+              echo "Digest of created app image: $(params.DIGEST)"              
+        params:
+          - name: DIGEST
+      params:
+        - name: DIGEST
+          value: $(tasks.buildpacks.results.APP_IMAGE_DIGEST)

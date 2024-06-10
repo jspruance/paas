@@ -1,0 +1,27 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: DEFAULT_NAME
+  namespace: DEFAULT_NAMESPACE
+  labels: {}
+spec:
+  serviceAccountName: buildpacks-service-account
+  pipelineRef:
+    name: DEFAULT_NAME
+  workspaces:
+    - name: source-workspace
+      subPath: source
+      persistentVolumeClaim:
+        claimName: buildpacks-source-pvc
+    - name: kaniko-docker-credentials
+      secret:
+        secretName: kaniko-docker-credentials
+  params:
+    - name: image
+      value: DOCKER_IMAGE_NAME # This defines the name of output image
+    - name: url
+      value: GIT_REPOSITORY_URL
+    - name: revision
+      value: GIT_REVISION
+    - name: fromDockerfile
+      value: FROM_DOCKERFILE
